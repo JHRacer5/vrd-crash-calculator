@@ -1,73 +1,61 @@
 from flask import Flask, render_template, jsonify, request
-from flask_sqlalchemy import SQLAlchemy
+from supabase import create_client, Client
 from datetime import datetime
 import os
 import json
 import uuid
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///crash_reports.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
 
-# Database Models
-class Report(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    incident_id = db.Column(db.String(50), unique=True, nullable=True)  # Unique ID for n8n linking
-    driver = db.Column(db.String(200))
-    date = db.Column(db.String(50))
-    chassis = db.Column(db.String(200))
-    event = db.Column(db.String(200))
-    accident_damage = db.Column(db.Text)
-    total = db.Column(db.Float, default=0.0)
-    status = db.Column(db.String(20), default='pending')  # pending, active, reviewed
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    parts = db.relationship('Part', backref='report', cascade='all, delete-orphan', lazy=True)
+# Supabase configuration
+SUPABASE_URL = os.environ.get('SUPABASE_URL', 'https://zbywxysilprzbqnctpkz.supabase.co')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpieXd4eXNpbHByemJxbmN0cGt6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2OTI1NTEsImV4cCI6MjA4MDI2ODU1MX0.yhAQ-afJc_oXeT13jI5HrKOPrqSP0rxKh2aRv4g2oZY')
 
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'incident_id': self.incident_id,
-            'driver': self.driver,
-            'date': self.date,
-            'chassis': self.chassis,
-            'event': self.event,
-            'accident_damage': self.accident_damage,
-            'total': self.total,
-            'status': self.status,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
-            'parts': [part.to_dict() for part in self.parts]
-        }
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-class Part(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    report_id = db.Column(db.Integer, db.ForeignKey('report.id'), nullable=False)
-    part_number = db.Column(db.String(100))
-    part = db.Column(db.String(500))
-    likelihood = db.Column(db.String(50))
-    price = db.Column(db.Float)
-    qty = db.Column(db.Integer, default=1)
-    total = db.Column(db.Float)
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'report_id': self.report_id,
-            'part_number': self.part_number,
-            'part': self.part,
-            'likelihood': self.likelihood,
-            'price': self.price,
-            'qty': self.qty,
-            'total': self.total
-        }
+def report_to_dict(report, parts=None):
+    """Convert a report record to dictionary format"""
+    return {
+        'id': report['id'],
+        'incident_id': report.get('incident_id'),
+        'driver': report.get('driver', ''),
+        'date': report.get('date', ''),
+        'chassis': report.get('chassis', ''),
+        'event': report.get('event', ''),
+        'accident_damage': report.get('accident_damage', ''),
+        'total': float(report.get('total', 0) or 0),
+        'status': report.get('status', 'pending'),
+        'created_at': report.get('created_at'),
+        'updated_at': report.get('updated_at'),
+        'parts': parts if parts is not None else []
+    }
 
 
-# Initialize database
-with app.app_context():
-    db.create_all()
+def part_to_dict(part):
+    """Convert a part record to dictionary format"""
+    return {
+        'id': part['id'],
+        'report_id': part['report_id'],
+        'part_number': part.get('part_number', ''),
+        'part': part.get('part', ''),
+        'likelihood': part.get('likelihood', 'Possible'),
+        'price': float(part.get('price', 0) or 0),
+        'qty': int(part.get('qty', 1) or 1),
+        'total': float(part.get('total', 0) or 0)
+    }
+
+
+def get_report_with_parts(report_id):
+    """Get a report with its parts"""
+    report_response = supabase.table('reports').select('*').eq('id', report_id).single().execute()
+    if not report_response.data:
+        return None
+
+    parts_response = supabase.table('parts').select('*').eq('report_id', report_id).execute()
+    parts = [part_to_dict(p) for p in (parts_response.data or [])]
+
+    return report_to_dict(report_response.data, parts)
 
 
 # Web Routes
@@ -118,15 +106,22 @@ def health_check():
 @app.route('/api/reports', methods=['GET'])
 def get_reports():
     """Get all reports"""
-    reports = Report.query.order_by(Report.created_at.desc()).all()
-    return jsonify([report.to_dict() for report in reports]), 200
+    response = supabase.table('reports').select('*').order('created_at', desc=True).execute()
+    reports = []
+    for report in (response.data or []):
+        parts_response = supabase.table('parts').select('*').eq('report_id', report['id']).execute()
+        parts = [part_to_dict(p) for p in (parts_response.data or [])]
+        reports.append(report_to_dict(report, parts))
+    return jsonify(reports), 200
 
 
 @app.route('/api/reports/<int:report_id>', methods=['GET'])
 def get_report(report_id):
     """Get a specific report by ID"""
-    report = Report.query.get_or_404(report_id)
-    return jsonify(report.to_dict()), 200
+    report = get_report_with_parts(report_id)
+    if not report:
+        return jsonify({'error': 'Report not found'}), 404
+    return jsonify(report), 200
 
 
 @app.route('/api/reports', methods=['POST'])
@@ -140,22 +135,25 @@ def create_report():
         incident_id = f"VRD-{now.strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
 
         # Create new report with PENDING status (awaiting n8n enrichment)
-        report = Report(
-            incident_id=incident_id,
-            driver=data.get('driver', ''),
-            date=data.get('date', ''),
-            chassis=data.get('chassis', ''),
-            event=data.get('event', ''),
-            accident_damage=data.get('accident_damage', ''),
-            status='pending',
-            total=0.0
-        )
-        db.session.add(report)
-        db.session.flush()  # Get the report ID
+        report_data = {
+            'incident_id': incident_id,
+            'driver': data.get('driver', ''),
+            'date': data.get('date', ''),
+            'chassis': data.get('chassis', ''),
+            'event': data.get('event', ''),
+            'accident_damage': data.get('accident_damage', ''),
+            'status': 'pending',
+            'total': 0.0
+        }
+
+        report_response = supabase.table('reports').insert(report_data).execute()
+        report = report_response.data[0]
+        report_id = report['id']
 
         # Add parts if provided
         total_amount = 0.0
         parts_data = data.get('parts', [])
+        created_parts = []
 
         for part_data in parts_data:
             price = float(part_data.get('price', 0) or 0)
@@ -163,29 +161,29 @@ def create_report():
             part_total = price * qty
             total_amount += part_total
 
-            part = Part(
-                report_id=report.id,
-                part_number=part_data.get('part_number', ''),
-                part=part_data.get('part', ''),
-                likelihood=part_data.get('likelihood', 'Possible'),
-                price=price,
-                qty=qty,
-                total=part_total
-            )
-            db.session.add(part)
+            part_insert = {
+                'report_id': report_id,
+                'part_number': part_data.get('part_number', ''),
+                'part': part_data.get('part', ''),
+                'likelihood': part_data.get('likelihood', 'Possible'),
+                'price': price,
+                'qty': qty,
+                'total': part_total
+            }
+            part_response = supabase.table('parts').insert(part_insert).execute()
+            created_parts.append(part_to_dict(part_response.data[0]))
 
         # Update report total
-        report.total = total_amount
-        db.session.commit()
+        supabase.table('reports').update({'total': total_amount}).eq('id', report_id).execute()
+        report['total'] = total_amount
 
         return jsonify({
             'success': True,
             'message': 'Report created successfully',
-            'report': report.to_dict()
+            'report': report_to_dict(report, created_parts)
         }), 201
 
     except Exception as e:
-        db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
@@ -199,21 +197,24 @@ def create_report_from_n8n():
             data = json.loads(data)
 
         # Create new report with PENDING status (from n8n)
-        report = Report(
-            driver=data.get('driver', ''),
-            date=data.get('date', ''),
-            chassis=data.get('chassis', ''),
-            event=data.get('event', ''),
-            accident_damage=data.get('accident_damage', ''),
-            status='pending',  # Mark as pending for review
-            total=0.0
-        )
-        db.session.add(report)
-        db.session.flush()  # Get the report ID
+        report_data = {
+            'driver': data.get('driver', ''),
+            'date': data.get('date', ''),
+            'chassis': data.get('chassis', ''),
+            'event': data.get('event', ''),
+            'accident_damage': data.get('accident_damage', ''),
+            'status': 'pending',
+            'total': 0.0
+        }
+
+        report_response = supabase.table('reports').insert(report_data).execute()
+        report = report_response.data[0]
+        report_id = report['id']
 
         # Add parts if provided
         total_amount = 0.0
         parts_data = data.get('parts', [])
+        created_parts = []
 
         for part_data in parts_data:
             price = float(part_data.get('price', 0) or 0)
@@ -221,45 +222,49 @@ def create_report_from_n8n():
             part_total = price * qty
             total_amount += part_total
 
-            part = Part(
-                report_id=report.id,
-                part_number=part_data.get('part_number', ''),
-                part=part_data.get('part', ''),
-                likelihood=part_data.get('likelihood', 'Possible'),
-                price=price,
-                qty=qty,
-                total=part_total
-            )
-            db.session.add(part)
+            part_insert = {
+                'report_id': report_id,
+                'part_number': part_data.get('part_number', ''),
+                'part': part_data.get('part', ''),
+                'likelihood': part_data.get('likelihood', 'Possible'),
+                'price': price,
+                'qty': qty,
+                'total': part_total
+            }
+            part_response = supabase.table('parts').insert(part_insert).execute()
+            created_parts.append(part_to_dict(part_response.data[0]))
 
         # Update report total
-        report.total = total_amount
-        db.session.commit()
+        supabase.table('reports').update({'total': total_amount}).eq('id', report_id).execute()
+        report['total'] = total_amount
 
         return jsonify({
             'success': True,
             'message': 'Report created successfully and marked as PENDING for review',
-            'report': report.to_dict(),
+            'report': report_to_dict(report, created_parts),
             'status': 'pending'
         }), 201
 
     except Exception as e:
-        db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
 @app.route('/api/reports/pending', methods=['GET'])
 def get_pending_reports():
     """Get all pending reports that need review"""
-    reports = Report.query.filter_by(status='pending').order_by(Report.created_at.desc()).all()
-    return jsonify([report.to_dict() for report in reports]), 200
+    response = supabase.table('reports').select('*').eq('status', 'pending').order('created_at', desc=True).execute()
+    reports = []
+    for report in (response.data or []):
+        parts_response = supabase.table('parts').select('*').eq('report_id', report['id']).execute()
+        parts = [part_to_dict(p) for p in (parts_response.data or [])]
+        reports.append(report_to_dict(report, parts))
+    return jsonify(reports), 200
 
 
 @app.route('/api/reports/<int:report_id>/status', methods=['PUT'])
 def update_report_status(report_id):
     """Update report status (pending, active, reviewed)"""
     try:
-        report = Report.query.get_or_404(report_id)
         data = request.json
 
         new_status = data.get('status', '')
@@ -269,18 +274,23 @@ def update_report_status(report_id):
                 'error': 'Invalid status. Must be: pending, active, or reviewed'
             }), 400
 
-        report.status = new_status
-        report.updated_at = datetime.utcnow()
-        db.session.commit()
+        response = supabase.table('reports').update({
+            'status': new_status,
+            'updated_at': datetime.utcnow().isoformat()
+        }).eq('id', report_id).execute()
+
+        if not response.data:
+            return jsonify({'success': False, 'error': 'Report not found'}), 404
+
+        report = get_report_with_parts(report_id)
 
         return jsonify({
             'success': True,
             'message': f'Report status updated to {new_status}',
-            'report': report.to_dict()
+            'report': report
         }), 200
 
     except Exception as e:
-        db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
@@ -288,25 +298,25 @@ def update_report_status(report_id):
 def update_report(report_id):
     """Update an existing report"""
     try:
-        report = Report.query.get_or_404(report_id)
         data = request.json
 
-        # Update report fields
+        # Build update data
+        update_data = {'updated_at': datetime.utcnow().isoformat()}
         if 'driver' in data:
-            report.driver = data['driver']
+            update_data['driver'] = data['driver']
         if 'date' in data:
-            report.date = data['date']
+            update_data['date'] = data['date']
         if 'chassis' in data:
-            report.chassis = data['chassis']
+            update_data['chassis'] = data['chassis']
         if 'event' in data:
-            report.event = data['event']
+            update_data['event'] = data['event']
         if 'accident_damage' in data:
-            report.accident_damage = data['accident_damage']
+            update_data['accident_damage'] = data['accident_damage']
 
         # Update parts if provided
         if 'parts' in data:
             # Delete existing parts
-            Part.query.filter_by(report_id=report_id).delete()
+            supabase.table('parts').delete().eq('report_id', report_id).execute()
 
             # Add new parts
             total_amount = 0.0
@@ -316,30 +326,33 @@ def update_report(report_id):
                 part_total = price * qty
                 total_amount += part_total
 
-                part = Part(
-                    report_id=report.id,
-                    part_number=part_data.get('part_number', ''),
-                    part=part_data.get('part', ''),
-                    likelihood=part_data.get('likelihood', 'Possible'),
-                    price=price,
-                    qty=qty,
-                    total=part_total
-                )
-                db.session.add(part)
+                part_insert = {
+                    'report_id': report_id,
+                    'part_number': part_data.get('part_number', ''),
+                    'part': part_data.get('part', ''),
+                    'likelihood': part_data.get('likelihood', 'Possible'),
+                    'price': price,
+                    'qty': qty,
+                    'total': part_total
+                }
+                supabase.table('parts').insert(part_insert).execute()
 
-            report.total = total_amount
+            update_data['total'] = total_amount
 
-        report.updated_at = datetime.utcnow()
-        db.session.commit()
+        response = supabase.table('reports').update(update_data).eq('id', report_id).execute()
+
+        if not response.data:
+            return jsonify({'success': False, 'error': 'Report not found'}), 404
+
+        report = get_report_with_parts(report_id)
 
         return jsonify({
             'success': True,
             'message': 'Report updated successfully',
-            'report': report.to_dict()
+            'report': report
         }), 200
 
     except Exception as e:
-        db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
@@ -353,29 +366,33 @@ def update_report_by_incident_id(incident_id):
             data = json.loads(data)
 
         # Find report by incident_id
-        report = Report.query.filter_by(incident_id=incident_id).first()
-        if not report:
+        response = supabase.table('reports').select('*').eq('incident_id', incident_id).execute()
+        if not response.data:
             return jsonify({
                 'success': False,
                 'error': f'Report with incident_id {incident_id} not found'
             }), 404
 
-        # Update report fields if provided
+        report = response.data[0]
+        report_id = report['id']
+
+        # Build update data
+        update_data = {'updated_at': datetime.utcnow().isoformat()}
         if 'driver' in data:
-            report.driver = data['driver']
+            update_data['driver'] = data['driver']
         if 'date' in data:
-            report.date = data['date']
+            update_data['date'] = data['date']
         if 'chassis' in data:
-            report.chassis = data['chassis']
+            update_data['chassis'] = data['chassis']
         if 'event' in data:
-            report.event = data['event']
+            update_data['event'] = data['event']
         if 'accident_damage' in data:
-            report.accident_damage = data['accident_damage']
+            update_data['accident_damage'] = data['accident_damage']
 
         # Update parts if provided
         if 'parts' in data and data['parts']:
             # Delete existing parts
-            Part.query.filter_by(report_id=report.id).delete()
+            supabase.table('parts').delete().eq('report_id', report_id).execute()
 
             # Add new parts
             total_amount = 0.0
@@ -391,32 +408,33 @@ def update_report_by_incident_id(incident_id):
                 part_total = price * qty
                 total_amount += part_total
 
-                part = Part(
-                    report_id=report.id,
-                    part_number=part_data.get('part_number', ''),
-                    part=part_data.get('part', ''),
-                    likelihood=part_data.get('likelihood', 'Possible'),
-                    price=price,
-                    qty=qty,
-                    total=part_total
-                )
-                db.session.add(part)
+                part_insert = {
+                    'report_id': report_id,
+                    'part_number': part_data.get('part_number', ''),
+                    'part': part_data.get('part', ''),
+                    'likelihood': part_data.get('likelihood', 'Possible'),
+                    'price': price,
+                    'qty': qty,
+                    'total': part_total
+                }
+                supabase.table('parts').insert(part_insert).execute()
 
-            report.total = total_amount
+            update_data['total'] = total_amount
 
         # Update status to active (n8n has enriched it)
-        report.status = 'active'
-        report.updated_at = datetime.utcnow()
-        db.session.commit()
+        update_data['status'] = 'active'
+
+        supabase.table('reports').update(update_data).eq('id', report_id).execute()
+
+        report = get_report_with_parts(report_id)
 
         return jsonify({
             'success': True,
             'message': 'Report updated successfully by incident_id',
-            'report': report.to_dict()
+            'report': report
         }), 200
 
     except Exception as e:
-        db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
@@ -424,9 +442,11 @@ def update_report_by_incident_id(incident_id):
 def delete_report(report_id):
     """Delete a report"""
     try:
-        report = Report.query.get_or_404(report_id)
-        db.session.delete(report)
-        db.session.commit()
+        # Parts will be deleted automatically due to ON DELETE CASCADE
+        response = supabase.table('reports').delete().eq('id', report_id).execute()
+
+        if not response.data:
+            return jsonify({'success': False, 'error': 'Report not found'}), 404
 
         return jsonify({
             'success': True,
@@ -434,7 +454,6 @@ def delete_report(report_id):
         }), 200
 
     except Exception as e:
-        db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
@@ -442,37 +461,45 @@ def delete_report(report_id):
 def add_part(report_id):
     """Add a part to a report"""
     try:
-        report = Report.query.get_or_404(report_id)
+        # Verify report exists
+        report_response = supabase.table('reports').select('*').eq('id', report_id).single().execute()
+        if not report_response.data:
+            return jsonify({'success': False, 'error': 'Report not found'}), 404
+
+        report = report_response.data
         data = request.json
 
         price = float(data.get('price', 0) or 0)
         qty = int(data.get('qty', 1) or 1)
         part_total = price * qty
 
-        part = Part(
-            report_id=report_id,
-            part_number=data.get('part_number', ''),
-            part=data.get('part', ''),
-            likelihood=data.get('likelihood', 'Possible'),
-            price=price,
-            qty=qty,
-            total=part_total
-        )
-        db.session.add(part)
+        part_insert = {
+            'report_id': report_id,
+            'part_number': data.get('part_number', ''),
+            'part': data.get('part', ''),
+            'likelihood': data.get('likelihood', 'Possible'),
+            'price': price,
+            'qty': qty,
+            'total': part_total
+        }
+
+        part_response = supabase.table('parts').insert(part_insert).execute()
+        part = part_response.data[0]
 
         # Update report total
-        report.total = (report.total or 0) + part_total
-        report.updated_at = datetime.utcnow()
-        db.session.commit()
+        new_total = float(report.get('total', 0) or 0) + part_total
+        supabase.table('reports').update({
+            'total': new_total,
+            'updated_at': datetime.utcnow().isoformat()
+        }).eq('id', report_id).execute()
 
         return jsonify({
             'success': True,
             'message': 'Part added successfully',
-            'part': part.to_dict()
+            'part': part_to_dict(part)
         }), 201
 
     except Exception as e:
-        db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
@@ -480,40 +507,61 @@ def add_part(report_id):
 def update_part(part_id):
     """Update a specific part"""
     try:
-        part = Part.query.get_or_404(part_id)
+        # Get existing part
+        part_response = supabase.table('parts').select('*').eq('id', part_id).single().execute()
+        if not part_response.data:
+            return jsonify({'success': False, 'error': 'Part not found'}), 404
+
+        part = part_response.data
+        old_total = float(part.get('total', 0) or 0)
+        report_id = part['report_id']
+
         data = request.json
 
-        old_total = part.total or 0
-
+        # Build update data
+        update_data = {}
         if 'part_number' in data:
-            part.part_number = data['part_number']
+            update_data['part_number'] = data['part_number']
         if 'part' in data:
-            part.part = data['part']
+            update_data['part'] = data['part']
         if 'likelihood' in data:
-            part.likelihood = data['likelihood']
+            update_data['likelihood'] = data['likelihood']
+
+        # Get current values for calculation
+        price = float(data.get('price', part.get('price', 0)) or 0)
+        qty = int(data.get('qty', part.get('qty', 1)) or 1)
+
         if 'price' in data:
-            part.price = float(data['price'] or 0)
+            update_data['price'] = price
         if 'qty' in data:
-            part.qty = int(data['qty'] or 1)
+            update_data['qty'] = qty
 
         # Recalculate part total
-        part.total = (part.price or 0) * (part.qty or 1)
+        new_part_total = price * qty
+        update_data['total'] = new_part_total
+
+        supabase.table('parts').update(update_data).eq('id', part_id).execute()
 
         # Update report total
-        report = Report.query.get(part.report_id)
-        report.total = (report.total or 0) - old_total + part.total
-        report.updated_at = datetime.utcnow()
+        report_response = supabase.table('reports').select('total').eq('id', report_id).single().execute()
+        report_total = float(report_response.data.get('total', 0) or 0)
+        new_report_total = report_total - old_total + new_part_total
 
-        db.session.commit()
+        supabase.table('reports').update({
+            'total': new_report_total,
+            'updated_at': datetime.utcnow().isoformat()
+        }).eq('id', report_id).execute()
+
+        # Get updated part
+        updated_part = supabase.table('parts').select('*').eq('id', part_id).single().execute()
 
         return jsonify({
             'success': True,
             'message': 'Part updated successfully',
-            'part': part.to_dict()
+            'part': part_to_dict(updated_part.data)
         }), 200
 
     except Exception as e:
-        db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
@@ -521,15 +569,27 @@ def update_part(part_id):
 def delete_part(part_id):
     """Delete a part"""
     try:
-        part = Part.query.get_or_404(part_id)
-        report = Report.query.get(part.report_id)
+        # Get existing part
+        part_response = supabase.table('parts').select('*').eq('id', part_id).single().execute()
+        if not part_response.data:
+            return jsonify({'success': False, 'error': 'Part not found'}), 404
+
+        part = part_response.data
+        part_total = float(part.get('total', 0) or 0)
+        report_id = part['report_id']
 
         # Update report total
-        report.total = (report.total or 0) - (part.total or 0)
-        report.updated_at = datetime.utcnow()
+        report_response = supabase.table('reports').select('total').eq('id', report_id).single().execute()
+        report_total = float(report_response.data.get('total', 0) or 0)
+        new_report_total = report_total - part_total
 
-        db.session.delete(part)
-        db.session.commit()
+        supabase.table('reports').update({
+            'total': new_report_total,
+            'updated_at': datetime.utcnow().isoformat()
+        }).eq('id', report_id).execute()
+
+        # Delete part
+        supabase.table('parts').delete().eq('id', part_id).execute()
 
         return jsonify({
             'success': True,
@@ -537,7 +597,6 @@ def delete_part(part_id):
         }), 200
 
     except Exception as e:
-        db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
