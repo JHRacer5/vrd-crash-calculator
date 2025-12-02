@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+
+{% block title %}New Report - VRD Racing{% endblock %}
+{% block page_title %}Create New Crash Report{% endblock %}
+
+{% block topbar_actions %}
+<a href="/reports" class="btn btn-secondary">
+    <span>←</span>
+    <span>Back to Reports</span>
+</a>
+{% endblock %}
+
+{% block content %}
+<!-- Crash Form -->
+<div class="card" style="max-width: 700px; margin: 0 auto;">
+    <div class="card-header" style="text-align: center;">
+        <h2 class="card-title" style="font-size: 28px;">Crash</h2>
+    </div>
+
+    <div style="padding: 30px;">
+        <!-- Driver Name -->
+        <div class="form-group" style="margin-bottom: 25px;">
+            <label class="form-label">Driver Name <span style="color: var(--racing-red);">*</span></label>
+            <input type="text" id="driver" class="form-input" required>
+            <div style="font-size: 12px; color: var(--racing-red); margin-top: 5px;">This field is required</div>
+        </div>
+
+        <!-- Car Number -->
+        <div class="form-group" style="margin-bottom: 25px;">
+            <label class="form-label">Car Number</label>
+            <input type="text" id="carNumber" class="form-input">
+        </div>
+
+        <!-- Date -->
+        <div class="form-group" style="margin-bottom: 25px;">
+            <label class="form-label">Date <span style="color: var(--racing-red);">*</span></label>
+            <input type="date" id="date" class="form-input" required>
+        </div>
+
+        <!-- Chassis -->
+        <div class="form-group" style="margin-bottom: 25px;">
+            <label class="form-label">Chassis <span style="color: var(--racing-red);">*</span></label>
+            <select id="chassis" class="form-select" required>
+                <option value="">Select an option ...</option>
+                <option value="IP22">IP22</option>
+                <option value="USFJ23">USFJ23</option>
+                <option value="USF22">USF22</option>
+            </select>
+        </div>
+
+        <!-- Event -->
+        <div class="form-group" style="margin-bottom: 25px;">
+            <label class="form-label">Event <span style="color: var(--racing-red);">*</span></label>
+            <input type="text" id="event" class="form-input" required>
+        </div>
+
+        <!-- Impact Areas -->
+        <div class="form-group" style="margin-bottom: 25px;">
+            <label class="form-label" style="margin-bottom: 12px;">Impact Areas</label>
+            <div style="display: grid; gap: 10px;">
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" name="impactAreas" value="Front-Left (FL)"
+                        style="margin-right: 10px; width: 18px; height: 18px; cursor: pointer;">
+                    <span>Front-Left (FL)</span>
+                </label>
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" name="impactAreas" value="Front-Right (FR)"
+                        style="margin-right: 10px; width: 18px; height: 18px; cursor: pointer;">
+                    <span>Front-Right (FR)</span>
+                </label>
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" name="impactAreas" value="Mid-Left (ML)"
+                        style="margin-right: 10px; width: 18px; height: 18px; cursor: pointer;">
+                    <span>Mid-Left (ML)</span>
+                </label>
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" name="impactAreas" value="Mid-Right (MR)"
+                        style="margin-right: 10px; width: 18px; height: 18px; cursor: pointer;">
+                    <span>Mid-Right (MR)</span>
+                </label>
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" name="impactAreas" value="Rear-Left (RL)"
+                        style="margin-right: 10px; width: 18px; height: 18px; cursor: pointer;">
+                    <span>Rear-Left (RL)</span>
+                </label>
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" name="impactAreas" value="Rear-Right (RR)"
+                        style="margin-right: 10px; width: 18px; height: 18px; cursor: pointer;">
+                    <span>Rear-Right (RR)</span>
+                </label>
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" name="impactAreas" value="Center-Front (CF)"
+                        style="margin-right: 10px; width: 18px; height: 18px; cursor: pointer;">
+                    <span>Center-Front (CF)</span>
+                </label>
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" name="impactAreas" value="Center-Rear (CR)"
+                        style="margin-right: 10px; width: 18px; height: 18px; cursor: pointer;">
+                    <span>Center-Rear (CR)</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Image of Damage -->
+        <div class="form-group" style="margin-bottom: 25px;">
+            <label class="form-label">Image of Damage</label>
+            <input type="file" id="damageImage" class="form-input" accept="image/*" style="padding: 10px;">
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 5px;">Upload a photo of the damage
+                (optional)</div>
+        </div>
+
+        <!-- Speed at Impact -->
+        <div class="form-group" style="margin-bottom: 25px;">
+            <label class="form-label">Speed at Impact <span style="color: var(--racing-red);">*</span></label>
+            <input type="text" id="speedAtImpact" class="form-input" placeholder="e.g., 120 km/h" required>
+        </div>
+
+        <!-- Barrier Type -->
+        <div class="form-group" style="margin-bottom: 30px;">
+            <label class="form-label">Barrier Type</label>
+            <input type="text" id="barrierType" class="form-input" placeholder="e.g., SAFER barrier, Tire wall">
+        </div>
+
+        <!-- Submit Button -->
+        <button class="btn btn-primary" onclick="saveReport()"
+            style="width: 100%; padding: 15px; font-size: 16px; font-weight: 700;">
+            Submit
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Set current date on page load
+    document.getElementById('date').valueAsDate = new Date();
+
+    async function saveReport() {
+        // Validate required fields
+        const driver = document.getElementById('driver').value.trim();
+        const date = document.getElementById('date').value;
+        const chassis = document.getElementById('chassis').value;
+        const event = document.getElementById('event').value.trim();
+        const speedAtImpact = document.getElementById('speedAtImpact').value.trim();
+
+        if (!driver) {
+            showToast('Error', 'Please enter driver name', 'error');
+            return;
+        }
+
+        if (!date) {
+            showToast('Error', 'Please select date', 'error');
+            return;
+        }
+
+        if (!chassis) {
+            showToast('Error', 'Please select a chassis', 'error');
+            return;
+        }
+
+        if (!event) {
+            showToast('Error', 'Please enter event', 'error');
+            return;
+        }
+
+        if (!speedAtImpact) {
+            showToast('Error', 'Please enter speed at impact', 'error');
+            return;
+        }
+
+        // Get selected impact areas
+        const impactAreas = Array.from(document.querySelectorAll('input[name="impactAreas"]:checked'))
+            .map(cb => cb.value);
+
+        // Get file info (if uploaded)
+        const damageImageInput = document.getElementById('damageImage');
+        const damageImageName = damageImageInput.files.length > 0 ? damageImageInput.files[0].name : '';
+
+        // Build accident damage description from form fields
+        const carNumber = document.getElementById('carNumber').value.trim();
+        const barrierType = document.getElementById('barrierType').value.trim();
+
+        let accidentDescription = `Speed at Impact: ${speedAtImpact}\n`;
+        if (carNumber) accidentDescription += `Car Number: ${carNumber}\n`;
+        accidentDescription += `Chassis: ${chassis}\n`;
+        if (barrierType) accidentDescription += `Barrier Type: ${barrierType}\n`;
+        if (impactAreas.length > 0) {
+            accidentDescription += `Impact Areas: ${impactAreas.join(', ')}\n`;
+        }
+        if (damageImageName) {
+            accidentDescription += `Damage Image: ${damageImageName}\n`;
+        }
+
+        // Prepare report data
+        const reportData = {
+            driver,
+            date,
+            chassis,
+            event,
+            accident_damage: accidentDescription,
+            parts: [] // Empty parts array - will be filled by n8n workflow or manual edit
+        };
+
+        try {
+            // Save to local API
+            const response = await fetch('/api/reports', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(reportData)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // Also send to n8n workflow with incident_id for linking
+                try {
+                    const n8nPayload = {
+                        "Driver Name": driver,
+                        "Car Number": carNumber,
+                        "Date": date,
+                        "Event": event,
+                        "Chassis": chassis,
+                        "Impact Areas": impactAreas,
+                        "Speed at impact": speedAtImpact,
+                        "Barrier Type": barrierType,
+                        "Image of Damage": damageImageName || null,
+                        "incident_id": result.report.incident_id,
+                        "report_id": result.report.id
+                    };
+                    await fetch('https://agents.slipstreamaiconsulting.com/webhook/vrdcrashworkflow', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(n8nPayload)
+                    });
+                } catch (n8nError) {
+                    console.warn('n8n webhook failed:', n8nError);
+                    // Don't block the user if n8n fails
+                }
+
+                showToast('Success', 'Crash report submitted successfully', 'success');
+                setTimeout(() => {
+                    window.location.href = `/reports/${result.report.id}`;
+                }, 1000);
+            } else {
+                showToast('Error', result.error || 'Failed to create report', 'error');
+            }
+        } catch (error) {
+            console.error('Error saving report:', error);
+            showToast('Error', 'Failed to save report', 'error');
+        }
+    }
+</script>
+{% endblock %}

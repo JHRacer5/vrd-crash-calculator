@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+
+{% block title %}All Reports - VRD Racing{% endblock %}
+{% block page_title %}All Crash Reports{% endblock %}
+
+{% block topbar_actions %}
+<a href="/reports/new" class="btn btn-primary">
+    <span>➕</span>
+    <span>New Report</span>
+</a>
+{% endblock %}
+
+{% block content %}
+<!-- Filters -->
+<div class="card">
+    <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+        <input type="text" id="searchInput" class="form-input" placeholder="Search by driver, venue, or event..."
+            style="flex: 1; min-width: 250px;">
+        <select id="sortSelect" class="form-select" style="width: 200px;">
+            <option value="date-desc">Newest First</option>
+            <option value="date-asc">Oldest First</option>
+            <option value="cost-desc">Highest Cost</option>
+            <option value="cost-asc">Lowest Cost</option>
+        </select>
+    </div>
+</div>
+
+<!-- Reports Table -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">All Reports <span id="reportCount" class="text-muted"
+                style="font-size: 14px; font-weight: 400;"></span></h2>
+        <button class="btn btn-secondary btn-sm" onclick="exportAllToCSV()">
+            <span>📥</span>
+            <span>Export CSV</span>
+        </button>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 60px;">ID</th>
+                    <th>Driver</th>
+                    <th>Date</th>
+                    <th>Chassis</th>
+                    <th>Event</th>
+                    <th>Parts Count</th>
+                    <th>Total Damage</th>
+                    <th style="width: 200px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="reportsTable">
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 60px; color: var(--text-muted);">
+                        <div class="loading" style="margin: 0 auto 20px;"></div>
+                        <div>Loading reports...</div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let allReports = [];
+
+    async function loadReports() {
+        try {
+            const response = await fetch('/api/reports');
+            allReports = await response.json();
+            renderReports();
+        } catch (error) {
+            console.error('Error loading reports:', error);
+            showToast('Error', 'Failed to load reports', 'error');
+            document.getElementById('reportsTable').innerHTML = `
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 60px; color: var(--text-error);">
+                        <div style="font-size: 48px; margin-bottom: 15px;">⚠️</div>
+                        <div>Failed to load reports. Please try again.</div>
+                    </td>
+                </tr>
+            `;
+        }
+    }
+
+    function renderReports() {
+        let reports = [...allReports];
+
+        // Apply search filter
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+        if (searchTerm) {
+            reports = reports.filter(r =>
+                (r.driver || '').toLowerCase().includes(searchTerm) ||
+                (r.venue || '').toLowerCase().includes(searchTerm) ||
+                (r.event || '').toLowerCase().includes(searchTerm)
+            );
+        }
+
+        // Apply sorting
+        const sortBy = document.getElementById('sortSelect').value;
+        reports.sort((a, b) => {
+            switch (sortBy) {
+                case 'date-desc':
+                    return new Date(b.date || 0) - new Date(a.date || 0);
+                case 'date-asc':
+                    return new Date(a.date || 0) - new Date(b.date || 0);
+                case 'cost-desc':
+                    return (b.total || 0) - (a.total || 0);
+                case 'cost-asc':
+                    return (a.total || 0) - (b.total || 0);
+                default:
+                    return 0;
+            }
+        });
+
+        const tbody = document.getElementById('reportsTable');
+        document.getElementById('reportCount').textContent = `(${reports.length})`;
+
+        if (reports.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 60px; color: var(--text-muted);">
+                        <div style="font-size: 48px; margin-bottom: 15px;">📋</div>
+                        <div style="margin-bottom: 10px;">No reports found</div>
+                        <a href="/reports/new" class="btn btn-primary" style="margin-top: 15px;">Create First Report</a>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = reports.map(report => `
+            <tr>
+                <td><strong>#${report.id}</strong></td>
+                <td><strong>${escapeHtml(report.driver || 'N/A')}</strong></td>
+                <td>${formatDate(report.date)}</td>
+                <td>${report.chassis || '-'}</td>
+                <td>${escapeHtml(report.event || 'N/A')}</td>
+                <td style="text-align: center;">${report.parts ? report.parts.length : 0}</td>
+                <td><strong class="text-error">${formatCurrency(report.total || 0)}</strong></td>
+                <td>
+                    <div style="display: flex; gap: 8px;">
+                        <a href="/reports/${report.id}" class="btn btn-secondary btn-sm">View</a>
+                        <button class="btn btn-secondary btn-sm" onclick="deleteReport(${report.id})">🗑️</button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    async function deleteReport(reportId) {
+        showModal(
+            'Delete Report',
+            `Are you sure you want to delete report #${reportId}? This action cannot be undone.`,
+            async () => {
+                try {
+                    const response = await fetch(`/api/reports/${reportId}`, {
+                        method: 'DELETE'
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        showToast('Success', 'Report deleted successfully', 'success');
+                        await loadReports();
+                    } else {
+                        showToast('Error', result.error || 'Failed to delete report', 'error');
+                    }
+                } catch (error) {
+                    console.error('Error deleting report:', error);
+                    showToast('Error', 'Failed to delete report', 'error');
+                }
+            }
+        );
+    }
+
+    function exportAllToCSV() {
+        let reports = [...allReports];
+
+        // Apply search filter if active
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+        if (searchTerm) {
+            reports = reports.filter(r =>
+                (r.driver || '').toLowerCase().includes(searchTerm) ||
+                (r.venue || '').toLowerCase().includes(searchTerm) ||
+                (r.event || '').toLowerCase().includes(searchTerm)
+            );
+        }
+
+        if (reports.length === 0) {
+            showToast('Warning', 'No reports to export', 'warning');
+            return;
+        }
+
+        let csv = 'VRD Racing - All Crash Reports\n\n';
+        csv += 'ID,Driver,Date,Venue,Event,Parts Count,Total Damage (USD)\n';
+
+        reports.forEach(report => {
+            csv += `${report.id},${escapeCSV(report.driver)},${report.date},${escapeCSV(report.venue)},${escapeCSV(report.event)},${report.parts ? report.parts.length : 0},${report.total || 0}\n`;
+        });
+
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const timestamp = new Date().toISOString().slice(0, 10);
+        a.download = `VRD_All_Reports_${timestamp}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        showToast('Success', `Exported ${reports.length} report${reports.length !== 1 ? 's' : ''}`, 'success');
+    }
+
+    function escapeCSV(str) {
+        if (str === null || str === undefined) return '';
+        str = String(str);
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+            return '"' + str.replace(/"/g, '""') + '"';
+        }
+        return str;
+    }
+
+    function formatDate(dateString) {
+        if (!dateString) return 'N/A';
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+        });
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Event listeners
+    document.getElementById('searchInput').addEventListener('input', renderReports);
+    document.getElementById('sortSelect').addEventListener('change', renderReports);
+
+    // Load reports on page load
+    loadReports();
+</script>
+{% endblock %}

@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - VRD Racing{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block topbar_actions %}
+<a href="/reports/new" class="btn btn-primary">
+    <span>➕</span>
+    <span>New Report</span>
+</a>
+{% endblock %}
+
+{% block content %}
+<!-- Stats Grid -->
+<div class="stats-grid">
+    <div class="stat-card" onclick="window.location.href='/pending'" style="cursor: pointer;">
+        <div class="stat-label">Pending Review</div>
+        <div class="stat-value" id="pendingReports" style="color: var(--racing-orange);">--</div>
+        <div class="stat-change" style="color: var(--racing-orange);">
+            <span>⏳</span>
+            <span>Need attention</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Total Reports</div>
+        <div class="stat-value" id="totalReports">--</div>
+        <div class="stat-change positive">
+            <span>↗</span>
+            <span>All time</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Total Damage Cost</div>
+        <div class="stat-value" id="totalCost">$--</div>
+        <div class="stat-change">
+            <span>💰</span>
+            <span>Sum of all reports</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">This Month</div>
+        <div class="stat-value" id="monthReports">--</div>
+        <div class="stat-change positive">
+            <span>📅</span>
+            <span id="currentMonth">--</span>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Reports -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Recent Crash Reports</h2>
+        <a href="/reports" class="btn btn-secondary btn-sm">View All</a>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Driver</th>
+                    <th>Date</th>
+                    <th>Venue</th>
+                    <th>Event</th>
+                    <th>Total Damage</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="recentReportsTable">
+                <tr>
+                    <td colspan="7" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                        <div class="loading" style="margin: 0 auto 15px;"></div>
+                        <div>Loading reports...</div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Top Drivers by Damage -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Top Drivers by Total Damage</h2>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Driver</th>
+                    <th>Incidents</th>
+                    <th>Total Damage</th>
+                </tr>
+            </thead>
+            <tbody id="topDriversTable">
+                <tr>
+                    <td colspan="4" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                        <div class="loading" style="margin: 0 auto 15px;"></div>
+                        <div>Calculating statistics...</div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Load dashboard data
+    async function loadDashboard() {
+        try {
+            // Load all reports
+            const allReportsResponse = await fetch('/api/reports');
+            const reports = await allReportsResponse.json();
+
+            // Load pending reports
+            const pendingResponse = await fetch('/api/reports/pending');
+            const pendingReports = await pendingResponse.json();
+
+            // Calculate statistics
+            const totalReports = reports.length;
+            const totalCost = reports.reduce((sum, r) => sum + (r.total || 0), 0);
+            const avgCost = totalReports > 0 ? totalCost / totalReports : 0;
+
+            // Current month reports
+            const currentDate = new Date();
+            const currentMonth = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+            const currentMonthNum = currentDate.getMonth();
+            const currentYear = currentDate.getFullYear();
+
+            const monthReports = reports.filter(r => {
+                const reportDate = new Date(r.date);
+                return reportDate.getMonth() === currentMonthNum &&
+                       reportDate.getFullYear() === currentYear;
+            }).length;
+
+            // Update stats
+            document.getElementById('pendingReports').textContent = pendingReports.length.toLocaleString();
+            document.getElementById('totalReports').textContent = totalReports.toLocaleString();
+            document.getElementById('totalCost').textContent = formatCurrency(totalCost);
+            document.getElementById('monthReports').textContent = monthReports.toLocaleString();
+            document.getElementById('currentMonth').textContent = currentMonth;
+
+            // Load recent reports (last 5)
+            loadRecentReports(reports.slice(0, 5));
+
+            // Calculate top drivers
+            calculateTopDrivers(reports);
+
+        } catch (error) {
+            console.error('Error loading dashboard:', error);
+            showToast('Error', 'Failed to load dashboard data', 'error');
+        }
+    }
+
+    function loadRecentReports(reports) {
+        const tbody = document.getElementById('recentReportsTable');
+
+        if (reports.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                        No reports yet. <a href="/reports/new" style="color: var(--racing-red);">Create your first report</a>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = reports.map(report => `
+            <tr>
+                <td><strong>#${report.id}</strong></td>
+                <td>${escapeHtml(report.driver || 'N/A')}</td>
+                <td>${formatDate(report.date)}</td>
+                <td>${escapeHtml(report.venue || 'N/A')}</td>
+                <td>${escapeHtml(report.event || 'N/A')}</td>
+                <td><strong class="text-error">${formatCurrency(report.total || 0)}</strong></td>
+                <td>
+                    <a href="/reports/${report.id}" class="btn btn-secondary btn-sm">View</a>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function calculateTopDrivers(reports) {
+        const driverStats = {};
+
+        reports.forEach(report => {
+            const driver = report.driver || 'Unknown';
+            if (!driverStats[driver]) {
+                driverStats[driver] = {
+                    driver: driver,
+                    incidents: 0,
+                    totalDamage: 0
+                };
+            }
+            driverStats[driver].incidents++;
+            driverStats[driver].totalDamage += report.total || 0;
+        });
+
+        // Sort by total damage
+        const topDrivers = Object.values(driverStats)
+            .sort((a, b) => b.totalDamage - a.totalDamage)
+            .slice(0, 5);
+
+        const tbody = document.getElementById('topDriversTable');
+
+        if (topDrivers.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="4" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                        No data available
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = topDrivers.map((driver, index) => `
+            <tr>
+                <td>
+                    <strong style="font-size: 18px;">
+                        ${index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
+                    </strong>
+                </td>
+                <td><strong>${escapeHtml(driver.driver)}</strong></td>
+                <td>${driver.incidents} incident${driver.incidents !== 1 ? 's' : ''}</td>
+                <td><strong class="text-error">${formatCurrency(driver.totalDamage)}</strong></td>
+            </tr>
+        `).join('');
+    }
+
+    function formatDate(dateString) {
+        if (!dateString) return 'N/A';
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+        });
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Load dashboard on page load
+    loadDashboard();
+
+    // Refresh every 30 seconds
+    setInterval(loadDashboard, 30000);
+</script>
+{% endblock %}

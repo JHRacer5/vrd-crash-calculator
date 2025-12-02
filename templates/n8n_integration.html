@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+
+{% block title %}n8n Integration - VRD Racing{% endblock %}
+{% block page_title %}n8n Integration{% endblock %}
+
+{% block content %}
+<!-- Integration Guide -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">n8n Workflow Integration</h2>
+        <span class="badge badge-success">Active</span>
+    </div>
+
+    <div style="line-height: 1.8;">
+        <p style="margin-bottom: 20px; color: var(--text-secondary); font-size: 15px;">
+            Connect your n8n workflow to automatically create crash reports. Reports created through this endpoint will be marked as <strong style="color: var(--racing-orange);">PENDING</strong> for manual review.
+        </p>
+
+        <h3 style="font-size: 18px; font-weight: 700; margin: 30px 0 15px; color: var(--text-primary);">📡 API Endpoint</h3>
+        <div style="background: var(--bg-tertiary); padding: 20px; border-radius: var(--radius-md); border-left: 4px solid var(--racing-red); margin-bottom: 25px;">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+                <span class="badge badge-red">POST</span>
+                <code style="background: var(--bg-elevated); padding: 6px 12px; border-radius: 6px; font-family: monospace; font-size: 14px; color: var(--racing-orange);" id="endpoint">http://localhost:8080/api/reports/from-n8n</code>
+                <button class="btn btn-secondary btn-sm" onclick="copyEndpoint()">📋 Copy</button>
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted);">
+                <strong>Note:</strong> Use <code style="background: var(--bg-elevated); padding: 2px 6px; border-radius: 4px;">http://host.docker.internal:8080/api/reports/from-n8n</code> if n8n is running in Docker
+            </div>
+        </div>
+
+        <h3 style="font-size: 18px; font-weight: 700; margin: 30px 0 15px; color: var(--text-primary);">📝 Request Format</h3>
+        <div style="background: var(--bg-tertiary); padding: 20px; border-radius: var(--radius-md); margin-bottom: 25px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <span style="font-weight: 600; color: var(--text-secondary); font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">JSON Payload</span>
+                <button class="btn btn-secondary btn-sm" onclick="copyJSON()">📋 Copy</button>
+            </div>
+            <pre style="background: var(--bg-elevated); padding: 18px; border-radius: 8px; overflow-x: auto; margin: 0; border: 1px solid var(--border-color);"><code style="font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6; color: var(--text-primary);" id="jsonExample">{
+  "driver": "John Smith",
+  "date": "2025-11-03",
+  "venue": "Laguna Seca",
+  "event": "Round 5 - Qualifying",
+  "accident_damage": "Rear impact during qualifying. Heavy contact with barrier.",
+  "parts": [
+    {
+      "part_number": "122-18-04-036",
+      "part": "Crashbox posteriore (Rear impact structure)",
+      "likelihood": "Highly Likely",
+      "price": 5000.00,
+      "qty": 1
+    },
+    {
+      "part_number": "121-16-10-002",
+      "part": "Rh rear lower wishbone assy",
+      "likelihood": "Highly Likely",
+      "price": 2500.00,
+      "qty": 1
+    }
+  ]
+}</code></pre>
+        </div>
+
+        <h3 style="font-size: 18px; font-weight: 700; margin: 30px 0 15px; color: var(--text-primary);">✅ Success Response</h3>
+        <div style="background: rgba(16, 185, 129, 0.1); padding: 20px; border-radius: var(--radius-md); border-left: 4px solid var(--success); margin-bottom: 25px;">
+            <pre style="background: var(--bg-elevated); padding: 18px; border-radius: 8px; overflow-x: auto; margin: 0;"><code style="font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6; color: var(--text-primary);">{
+  "success": true,
+  "message": "Report created successfully and marked as PENDING for review",
+  "status": "pending",
+  "report": {
+    "id": 1,
+    "driver": "John Smith",
+    "status": "pending",
+    "total": 7500.00,
+    ...
+  }
+}</code></pre>
+        </div>
+
+        <h3 style="font-size: 18px; font-weight: 700; margin: 30px 0 15px; color: var(--text-primary);">⚙️ n8n HTTP Request Node Configuration</h3>
+        <div style="background: var(--bg-tertiary); padding: 25px; border-radius: var(--radius-md); margin-bottom: 25px;">
+            <div style="display: grid; grid-template-columns: 150px 1fr; gap: 15px 20px;">
+                <div style="font-weight: 600; color: var(--text-secondary);">Method:</div>
+                <div><span class="badge badge-red">POST</span></div>
+
+                <div style="font-weight: 600; color: var(--text-secondary);">URL:</div>
+                <div><code style="background: var(--bg-elevated); padding: 6px 12px; border-radius: 6px; font-size: 13px;">http://host.docker.internal:8080/api/reports/from-n8n</code></div>
+
+                <div style="font-weight: 600; color: var(--text-secondary);">Authentication:</div>
+                <div>None</div>
+
+                <div style="font-weight: 600; color: var(--text-secondary);">Body Type:</div>
+                <div>JSON</div>
+
+                <div style="font-weight: 600; color: var(--text-secondary);">Headers:</div>
+                <div><code style="background: var(--bg-elevated); padding: 6px 12px; border-radius: 6px; font-size: 13px;">Content-Type: application/json</code></div>
+            </div>
+        </div>
+
+        <h3 style="font-size: 18px; font-weight: 700; margin: 30px 0 15px; color: var(--text-primary);">🔄 Workflow</h3>
+        <div style="background: var(--bg-tertiary); padding: 25px; border-radius: var(--radius-md); border-left: 4px solid var(--racing-orange);">
+            <ol style="margin: 0; padding-left: 20px; color: var(--text-secondary); line-height: 2;">
+                <li>n8n workflow processes crash report data</li>
+                <li>Workflow sends POST request to <code style="background: var(--bg-elevated); padding: 2px 8px; border-radius: 4px;">/api/reports/from-n8n</code></li>
+                <li>Report is created with <span class="badge badge-orange" style="font-size: 11px;">PENDING</span> status</li>
+                <li>User reviews report in <a href="/pending" style="color: var(--racing-red); font-weight: 600;">Pending Reports</a> section</li>
+                <li>User edits/confirms details and marks as Active</li>
+                <li>Report moves to <a href="/reports" style="color: var(--racing-red); font-weight: 600;">All Reports</a></li>
+            </ol>
+        </div>
+    </div>
+</div>
+
+<!-- Test Section -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Test Integration</h2>
+    </div>
+
+    <div style="margin-bottom: 20px; color: var(--text-secondary);">
+        Test the endpoint with a sample report to verify your integration is working correctly.
+    </div>
+
+    <div style="display: flex; gap: 12px;">
+        <button class="btn btn-primary" onclick="testEndpoint()">
+            <span>🧪</span>
+            <span>Send Test Report</span>
+        </button>
+        <button class="btn btn-secondary" onclick="window.location.href='/pending'">
+            <span>⏳</span>
+            <span>View Pending Reports</span>
+        </button>
+    </div>
+
+    <div id="testResult" style="margin-top: 20px; display: none;"></div>
+</div>
+
+<!-- Other Endpoints -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Additional API Endpoints</h2>
+    </div>
+
+    <div style="display: grid; gap: 20px;">
+        <div style="background: var(--bg-tertiary); padding: 20px; border-radius: var(--radius-md);">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+                <span class="badge badge-gray">GET</span>
+                <code style="background: var(--bg-elevated); padding: 6px 12px; border-radius: 6px; font-family: monospace; font-size: 14px;">http://localhost:8080/api/reports/pending</code>
+            </div>
+            <div style="color: var(--text-secondary); font-size: 14px;">Get all pending reports</div>
+        </div>
+
+        <div style="background: var(--bg-tertiary); padding: 20px; border-radius: var(--radius-md);">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+                <span class="badge badge-yellow">PUT</span>
+                <code style="background: var(--bg-elevated); padding: 6px 12px; border-radius: 6px; font-family: monospace; font-size: 14px;">http://localhost:8080/api/reports/{id}/status</code>
+            </div>
+            <div style="color: var(--text-secondary); font-size: 14px;">Update report status (pending, active, reviewed)</div>
+        </div>
+
+        <div style="background: var(--bg-tertiary); padding: 20px; border-radius: var(--radius-md);">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+                <span class="badge badge-gray">GET</span>
+                <code style="background: var(--bg-elevated); padding: 6px 12px; border-radius: 6px; font-family: monospace; font-size: 14px;">http://localhost:8080/api/reports</code>
+            </div>
+            <div style="color: var(--text-secondary); font-size: 14px;">Get all reports (all statuses)</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function copyEndpoint() {
+        const endpoint = document.getElementById('endpoint').textContent;
+        navigator.clipboard.writeText(endpoint);
+        showToast('Copied', 'Endpoint URL copied to clipboard', 'success');
+    }
+
+    function copyJSON() {
+        const json = document.getElementById('jsonExample').textContent;
+        navigator.clipboard.writeText(json);
+        showToast('Copied', 'JSON example copied to clipboard', 'success');
+    }
+
+    async function testEndpoint() {
+        const testData = {
+            driver: "Test Driver",
+            date: new Date().toISOString().split('T')[0],
+            venue: "Test Track",
+            event: "Integration Test",
+            accident_damage: "This is a test report from the n8n integration page.",
+            parts: [
+                {
+                    part_number: "TEST-001",
+                    part: "Test Part 1",
+                    likelihood: "Highly Likely",
+                    price: 1000.00,
+                    qty: 1
+                },
+                {
+                    part_number: "TEST-002",
+                    part: "Test Part 2",
+                    likelihood: "Likely",
+                    price: 500.00,
+                    qty: 2
+                }
+            ]
+        };
+
+        const resultDiv = document.getElementById('testResult');
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = '<div class="loading" style="margin: 20px auto;"></div><div style="text-align: center; color: var(--text-muted);">Sending test request...</div>';
+
+        try {
+            const response = await fetch('/api/reports/from-n8n', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(testData)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                resultDiv.innerHTML = `
+                    <div style="background: rgba(16, 185, 129, 0.1); padding: 20px; border-radius: var(--radius-md); border-left: 4px solid var(--success);">
+                        <div style="font-weight: 700; margin-bottom: 10px; color: var(--success); display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 24px;">✅</span>
+                            <span>Test Successful!</span>
+                        </div>
+                        <div style="color: var(--text-secondary); margin-bottom: 15px;">
+                            Test report created with ID: <strong>#${result.report.id}</strong> | Status: <span class="badge badge-orange">PENDING</span>
+                        </div>
+                        <a href="/pending" class="btn btn-primary btn-sm">View in Pending Reports</a>
+                    </div>
+                `;
+                showToast('Success', 'Test report created successfully', 'success');
+            } else {
+                resultDiv.innerHTML = `
+                    <div style="background: rgba(239, 68, 68, 0.1); padding: 20px; border-radius: var(--radius-md); border-left: 4px solid var(--error);">
+                        <div style="font-weight: 700; margin-bottom: 10px; color: var(--error);">❌ Test Failed</div>
+                        <div style="color: var(--text-secondary);">Error: ${result.error}</div>
+                    </div>
+                `;
+                showToast('Error', 'Test failed: ' + result.error, 'error');
+            }
+        } catch (error) {
+            console.error('Test error:', error);
+            resultDiv.innerHTML = `
+                <div style="background: rgba(239, 68, 68, 0.1); padding: 20px; border-radius: var(--radius-md); border-left: 4px solid var(--error);">
+                    <div style="font-weight: 700; margin-bottom: 10px; color: var(--error);">❌ Connection Error</div>
+                    <div style="color: var(--text-secondary);">Failed to connect to API: ${error.message}</div>
+                </div>
+            `;
+            showToast('Error', 'Connection failed', 'error');
+        }
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}Pending Reports - VRD Racing{% endblock %}
+{% block page_title %}Pending Reports{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-secondary" onclick="location.reload()">
+    <span>🔄</span>
+    <span>Refresh</span>
+</button>
+{% endblock %}
+
+{% block content %}
+<!-- Alert Banner -->
+<div
+    style="background: linear-gradient(135deg, var(--racing-orange), #ea580c); padding: 20px 30px; border-radius: var(--radius-lg); margin-bottom: 30px; display: flex; align-items: center; gap: 15px; box-shadow: 0 0 30px rgba(249, 115, 22, 0.3);">
+    <div style="font-size: 32px;">⏳</div>
+    <div style="flex: 1;">
+        <div style="font-size: 18px; font-weight: 700; margin-bottom: 5px;">Reports Awaiting Review</div>
+        <div style="font-size: 14px; opacity: 0.9;">These reports were created by the n8n workflow and need your review
+            before being finalized.</div>
+    </div>
+    <div style="font-size: 36px; font-weight: 800;" id="pendingCount">--</div>
+</div>
+
+<!-- Pending Reports Table -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Reports Pending Review</h2>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 60px;">ID</th>
+                    <th>Driver</th>
+                    <th>Date</th>
+                    <th>Chassis</th>
+                    <th>Event</th>
+                    <th>Parts Count</th>
+                    <th>Total Damage</th>
+                    <th style="width: 250px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="pendingReportsTable">
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 60px; color: var(--text-muted);">
+                        <div class="loading" style="margin: 0 auto 20px;"></div>
+                        <div>Loading pending reports...</div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let pendingReports = [];
+
+    async function loadPendingReports() {
+        try {
+            const response = await fetch('/api/reports/pending');
+            pendingReports = await response.json();
+
+            document.getElementById('pendingCount').textContent = pendingReports.length;
+            renderPendingReports();
+        } catch (error) {
+            console.error('Error loading pending reports:', error);
+            showToast('Error', 'Failed to load pending reports', 'error');
+            document.getElementById('pendingReportsTable').innerHTML = `
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 60px; color: var(--text-error);">
+                        <div style="font-size: 48px; margin-bottom: 15px;">⚠️</div>
+                        <div>Failed to load pending reports. Please try again.</div>
+                    </td>
+                </tr>
+            `;
+        }
+    }
+
+    function renderPendingReports() {
+        const tbody = document.getElementById('pendingReportsTable');
+
+        if (pendingReports.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 60px; color: var(--text-muted);">
+                        <div style="font-size: 48px; margin-bottom: 15px;">✅</div>
+                        <div style="margin-bottom: 10px; font-size: 18px; font-weight: 600;">All Clear!</div>
+                        <div>No pending reports. All reports have been reviewed.</div>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = pendingReports.map(report => `
+            <tr>
+                <td><strong>#${report.id}</strong></td>
+                <td><strong>${escapeHtml(report.driver || 'N/A')}</strong></td>
+                <td>${formatDate(report.date)}</td>
+                <td>${escapeHtml(report.venue || 'N/A')}</td>
+                <td>${escapeHtml(report.event || 'N/A')}</td>
+                <td style="text-align: center;">${report.parts ? report.parts.length : 0}</td>
+                <td><strong class="text-error">${formatCurrency(report.total || 0)}</strong></td>
+                <td>
+                    <div style="display: flex; gap: 8px;">
+                        <a href="/reports/${report.id}" class="btn btn-primary btn-sm">Review</a>
+                        <button class="btn btn-secondary btn-sm" onclick="markAsActive(${report.id})" title="Mark as Active">
+                            ✓
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    async function markAsActive(reportId) {
+        showModal(
+            'Mark as Active',
+            'Mark this report as active without reviewing? You can still edit it later.',
+            async () => {
+                try {
+                    const response = await fetch(`/api/reports/${reportId}/status`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: 'active' })
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        showToast('Success', 'Report marked as active', 'success');
+                        await loadPendingReports();
+                    } else {
+                        showToast('Error', result.error || 'Failed to update status', 'error');
+                    }
+                } catch (error) {
+                    console.error('Error updating status:', error);
+                    showToast('Error', 'Failed to update status', 'error');
+                }
+            }
+        );
+    }
+
+    function formatDate(dateString) {
+        if (!dateString) return 'N/A';
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+        });
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Load pending reports on page load
+    loadPendingReports();
+
+    // Auto-refresh every 30 seconds
+    setInterval(loadPendingReports, 30000);
+</script>
+{% endblock %}
