@@ -1,23 +1,39 @@
 # VRD Racing - Crash Report Calculator Dashboard
 
-A Flask-based crash report calculator dashboard with SQLite database and REST API for n8n integration.
+A Flask-based crash report calculator dashboard with Supabase cloud database and REST API for n8n AI workflow integration.
 
 ## Features
 
 - Interactive web dashboard for crash report management
-- SQLite database for persistent storage
+- Supabase cloud database for persistent storage
 - REST API endpoints for n8n workflow integration
-- Docker support for easy deployment
-- CSV export functionality
-- Print-friendly report format
+- Automatic AI-powered parts estimation via n8n
+- Docker support with production-ready gunicorn server
+- CORS enabled for cross-origin API access
+- Cloudflare container deployment ready
+
+## Architecture
+
+```
+User submits crash report → Dashboard saves to Supabase
+                                    ↓
+                         Triggers n8n webhook
+                                    ↓
+                    n8n AI analyzes & generates parts list
+                                    ↓
+                    n8n calls back to update report
+                                    ↓
+                      Report updated with parts (status: active)
+```
 
 ## Quick Start
 
 ### Using Docker (Recommended)
 
-1. Navigate to the project directory:
+1. Clone the repository:
 ```bash
-cd ~/crash-calculator-dashboard
+git clone https://github.com/JHRacer5/vrd-crash-calculator.git
+cd vrd-crash-calculator
 ```
 
 2. Build and run with Docker Compose:
@@ -41,11 +57,43 @@ python app.py
 
 3. Access the dashboard at: http://localhost:8080
 
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SUPABASE_URL` | Supabase project URL | (built-in) |
+| `SUPABASE_KEY` | Supabase anon key | (built-in) |
+| `N8N_WEBHOOK_URL` | n8n webhook for AI processing | (built-in) |
+| `PORT` | Server port | `8080` |
+| `FLASK_DEBUG` | Enable debug mode | `False` |
+
+## Cloudflare Deployment
+
+This app is production-ready for Cloudflare container deployment.
+
+### Required Environment Variables
+
+Set these in your Cloudflare container settings:
+
+```
+SUPABASE_URL=https://zbywxysilprzbqnctpkz.supabase.co
+SUPABASE_KEY=your-supabase-anon-key
+N8N_WEBHOOK_URL=https://slipstreamaiconsulting.app.n8n.cloud/webhook/vrdcrashworkflow
+PORT=8080
+```
+
+### After Deployment
+
+Update your n8n workflow's callback HTTP node to:
+```
+PUT https://YOUR-CLOUDFLARE-DOMAIN/api/reports/by-incident/{{ $json.body.incident_id }}
+```
+
 ## API Documentation
 
 ### Base URL
 ```
-http://localhost:8080/api
+https://your-domain.com/api
 ```
 
 ### Endpoints
@@ -56,41 +104,11 @@ GET /api/health
 ```
 Returns the API health status.
 
-**Response:**
-```json
-{
-  "status": "healthy",
-  "message": "VRD Crash Calculator API is running"
-}
-```
-
----
-
 #### Get All Reports
 ```http
 GET /api/reports
 ```
-Retrieves all crash reports.
-
-**Response:**
-```json
-[
-  {
-    "id": 1,
-    "driver": "John Doe",
-    "date": "2025-11-03",
-    "venue": "Laguna Seca",
-    "event": "Round 5",
-    "accident_damage": "Rear impact damage",
-    "total": 15250.00,
-    "created_at": "2025-11-03T10:30:00",
-    "updated_at": "2025-11-03T10:30:00",
-    "parts": [...]
-  }
-]
-```
-
----
+Retrieves all crash reports with parts.
 
 #### Get Single Report
 ```http
@@ -98,105 +116,70 @@ GET /api/reports/{report_id}
 ```
 Retrieves a specific crash report.
 
-**Response:**
-```json
-{
-  "id": 1,
-  "driver": "John Doe",
-  "date": "2025-11-03",
-  "venue": "Laguna Seca",
-  "event": "Round 5",
-  "accident_damage": "Rear impact damage",
-  "total": 15250.00,
-  "parts": [
-    {
-      "id": 1,
-      "part_number": "122-18-04-036",
-      "part": "Crashbox posteriore (Rear impact structure)",
-      "likelihood": "Highly Likely",
-      "price": 5000.00,
-      "qty": 1,
-      "total": 5000.00
-    }
-  ]
-}
+#### Get Pending Reports
+```http
+GET /api/reports/pending
 ```
+Retrieves reports awaiting AI processing.
 
----
-
-#### Create Report (Main n8n Endpoint)
+#### Create Report
 ```http
 POST /api/reports
 Content-Type: application/json
 ```
+Creates a new report and triggers n8n AI workflow.
 
 **Request Body:**
 ```json
 {
   "driver": "John Doe",
   "date": "2025-11-03",
-  "venue": "Laguna Seca",
-  "event": "Round 5",
-  "accident_damage": "Rear impact damage during qualifying",
+  "chassis": "IP22",
+  "event": "Round 5 - Qualifying",
+  "accident_damage": "Speed: 80mph, Impact: Front-Left, Barrier: SAFER"
+}
+```
+
+#### Update Report by Incident ID (n8n callback)
+```http
+PUT /api/reports/by-incident/{incident_id}
+Content-Type: application/json
+```
+Used by n8n to add AI-generated parts to a report.
+
+**Request Body:**
+```json
+{
   "parts": [
     {
       "part_number": "122-18-04-036",
-      "part": "Crashbox posteriore (Rear impact structure)",
+      "part": "Crashbox posteriore",
       "likelihood": "Highly Likely",
       "price": 5000.00,
-      "qty": 1
-    },
-    {
-      "part_number": "121-16-10-002",
-      "part": "Rh rear lower wishbone assy",
-      "likelihood": "Highly Likely",
-      "price": 2500.00,
       "qty": 1
     }
   ]
 }
 ```
 
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Report created successfully",
-  "report": {
-    "id": 1,
-    "driver": "John Doe",
-    "total": 7500.00,
-    ...
-  }
-}
-```
-
----
-
-#### Update Report
+#### Update Report Status
 ```http
-PUT /api/reports/{report_id}
+PUT /api/reports/{report_id}/status
 Content-Type: application/json
 ```
 
-**Request Body:** Same as Create Report
-
----
+**Request Body:**
+```json
+{
+  "status": "reviewed"
+}
+```
+Valid statuses: `pending`, `active`, `reviewed`
 
 #### Delete Report
 ```http
 DELETE /api/reports/{report_id}
 ```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Report deleted successfully"
-}
-```
-
----
 
 #### Add Part to Report
 ```http
@@ -204,187 +187,111 @@ POST /api/reports/{report_id}/parts
 Content-Type: application/json
 ```
 
-**Request Body:**
-```json
-{
-  "part_number": "316-14-10-006",
-  "part": "Rear upper wishbone",
-  "likelihood": "Likely",
-  "price": 1200.00,
-  "qty": 2
-}
-```
-
----
-
 #### Update Part
 ```http
 PUT /api/parts/{part_id}
 Content-Type: application/json
 ```
 
-**Request Body:**
-```json
-{
-  "part_number": "316-14-10-006",
-  "part": "Rear upper wishbone",
-  "likelihood": "Highly Likely",
-  "price": 1300.00,
-  "qty": 2
-}
-```
-
----
-
 #### Delete Part
 ```http
 DELETE /api/parts/{part_id}
 ```
 
-## n8n Integration Guide
+## n8n Integration
 
-### Step 1: Replace Google Sheets Node
+### Workflow Overview
 
-In your n8n workflow, you'll replace the Google Sheets node with an HTTP Request node.
+1. **Dashboard triggers n8n** when a report is created
+2. **n8n AI** analyzes crash data and generates parts list
+3. **n8n calls back** to update the report with parts
 
-### Step 2: Add HTTP Request Node
+### n8n Webhook Receives
 
-1. Add a new "HTTP Request" node after your AI Agent
-2. Configure it as follows:
-
-**Method:** POST
-**URL:** `http://host.docker.internal:8080/api/reports`
-**Authentication:** None
-**Body Content Type:** JSON
-
-**Request Body:**
 ```json
 {
-  "driver": "{{ $json.driver }}",
-  "date": "{{ $json.date }}",
-  "venue": "{{ $json.venue }}",
-  "event": "{{ $json.event }}",
-  "accident_damage": "{{ $json.accident_damage }}",
-  "parts": "{{ $json.parts }}"
+  "incident_id": "VRD-20251202-ABC123",
+  "driver": "John Doe",
+  "date": "2025-12-02",
+  "chassis": "IP22",
+  "event": "Round 5 - Qualifying",
+  "accident_damage": "Speed: 80mph, Impact: Front-Left..."
 }
 ```
 
-### Step 3: Format AI Agent Output
+### n8n Callback Format
 
-Your AI Agent should output data in this format:
+```http
+PUT /api/reports/by-incident/{incident_id}
+```
 
 ```json
 {
-  "driver": "John Doe",
-  "date": "2025-11-03",
-  "venue": "Laguna Seca",
-  "event": "Round 5",
-  "accident_damage": "Rear impact during qualifying session",
   "parts": [
     {
       "part_number": "122-18-04-036",
-      "part": "Crashbox posteriore (Rear impact structure)",
+      "part": "Front impact structure",
       "likelihood": "Highly Likely",
-      "price": 5000,
+      "price": 5000.00,
       "qty": 1
     }
   ]
 }
 ```
 
-### Step 4: Update AI Agent System Prompt
-
-Add this to your AI Agent's system message:
-
-```
-When you've gathered all the necessary information and created the crash report,
-output the data in the following JSON format:
-
-{
-  "driver": "Driver Name",
-  "date": "YYYY-MM-DD",
-  "venue": "Venue Name",
-  "event": "Event Name",
-  "accident_damage": "Description of the accident and damage",
-  "parts": [
-    {
-      "part_number": "Part Number",
-      "part": "Part Description",
-      "likelihood": "Highly Likely|Likely|Possible|Unlikely",
-      "price": 0.00,
-      "qty": 1
-    }
-  ]
-}
-
-This data will be automatically saved to our crash report system.
-```
-
-### Accessing from n8n Docker Container
-
-If n8n is running in Docker, use one of these URLs:
-
-- **If on same Docker network:** `http://vrd-crash-calculator:8080`
-- **If on host network:** `http://host.docker.internal:8080`
-- **From outside:** `http://localhost:8080`
+See `n8n-integration/` folder for detailed setup guides.
 
 ## Database
 
-The application uses SQLite for data storage. The database file is located at:
-```
-instance/crash_reports.db
-```
+The application uses **Supabase** (PostgreSQL) for cloud data storage.
 
-When running in Docker, this is persisted in a volume.
+### Tables
 
-## Stopping the Application
-
-### Docker
-```bash
-docker-compose down
-```
-
-### Manual
-Press `Ctrl+C` in the terminal where the app is running.
-
-## Troubleshooting
-
-### Port Already in Use
-If port 8080 is already in use, modify `docker-compose.yml`:
-```yaml
-ports:
-  - "8081:8080"  # Change 8081 to any available port
-```
-
-### n8n Can't Connect
-1. Ensure both containers are running: `docker ps`
-2. Check if they're on the same network
-3. Use `http://host.docker.internal:8080` if n8n is in Docker
-4. Check firewall settings
-
-### Database Not Persisting
-Ensure the `instance` directory exists and has write permissions:
-```bash
-mkdir -p instance
-chmod 755 instance
-```
+- `reports` - Crash report metadata
+- `parts` - Parts associated with reports (cascade delete)
 
 ## Development
 
 To run in development mode with auto-reload:
 
-```python
-# In app.py, change the last line to:
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True)
+```bash
+FLASK_DEBUG=True python app.py
 ```
 
-## Support
+Or with Docker:
+```bash
+docker-compose up -d
+docker logs -f vrd-crash-calculator
+```
 
-For issues or questions, please check:
-- Application logs: `docker-compose logs -f`
-- API health: http://localhost:8080/api/health
-- Database contents: Use any SQLite browser
+## Troubleshooting
+
+### API Health Check
+```bash
+curl http://localhost:8080/api/health
+```
+
+### View Logs
+```bash
+docker logs vrd-crash-calculator
+```
+
+### n8n Can't Reach Dashboard
+- Ensure dashboard is publicly accessible (Cloudflare deployed)
+- Check CORS is enabled (it is by default)
+- Verify the callback URL in n8n matches your domain
+
+### Report Stuck in Pending
+- Check n8n workflow is active
+- Verify webhook URL is correct
+- Check n8n execution logs for errors
+
+## Tech Stack
+
+- **Backend:** Flask + Gunicorn
+- **Database:** Supabase (PostgreSQL)
+- **AI Processing:** n8n Cloud
+- **Deployment:** Docker / Cloudflare Containers
 
 ## License
 
