@@ -1,17 +1,58 @@
 from flask import Flask, render_template, jsonify, request
+from flask_cors import CORS
 from supabase import create_client, Client
 from datetime import datetime
 import os
 import json
 import uuid
+import requests
+import threading
 
 app = Flask(__name__)
+
+# Enable CORS for n8n cloud and other external services
+CORS(app, resources={
+    r"/api/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 
 # Supabase configuration
 SUPABASE_URL = os.environ.get('SUPABASE_URL', 'https://zbywxysilprzbqnctpkz.supabase.co')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpieXd4eXNpbHByemJxbmN0cGt6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2OTI1NTEsImV4cCI6MjA4MDI2ODU1MX0.yhAQ-afJc_oXeT13jI5HrKOPrqSP0rxKh2aRv4g2oZY')
 
+# n8n webhook URL for AI processing (production webhook)
+N8N_WEBHOOK_URL = os.environ.get('N8N_WEBHOOK_URL', 'https://slipstreamaiconsulting.app.n8n.cloud/webhook/vrdcrashworkflow')
+
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
+def trigger_n8n_workflow(report_data):
+    """Trigger n8n webhook to process crash report with AI (runs in background)"""
+    def send_webhook():
+        try:
+            print(f"[WEBHOOK] Triggering n8n webhook at: {N8N_WEBHOOK_URL}")
+            print(f"[WEBHOOK] Sending data for incident: {report_data.get('incident_id')}")
+            response = requests.post(
+                N8N_WEBHOOK_URL,
+                json=report_data,
+                headers={'Content-Type': 'application/json'},
+                timeout=30
+            )
+            print(f"[WEBHOOK] Response status: {response.status_code}")
+            if response.status_code == 200:
+                print(f"[WEBHOOK] SUCCESS - n8n webhook triggered for incident {report_data.get('incident_id')}")
+            else:
+                print(f"[WEBHOOK] WARNING - n8n returned status {response.status_code}: {response.text}")
+        except Exception as e:
+            print(f"[WEBHOOK] ERROR - Failed to trigger n8n webhook: {str(e)}")
+
+    # Run in background thread so we don't block the response
+    thread = threading.Thread(target=send_webhook)
+    thread.daemon = True
+    thread.start()
 
 
 def report_to_dict(report, parts=None):
@@ -177,9 +218,20 @@ def create_report():
         supabase.table('reports').update({'total': total_amount}).eq('id', report_id).execute()
         report['total'] = total_amount
 
+        # Trigger n8n webhook for AI processing (runs in background)
+        webhook_data = {
+            'incident_id': incident_id,
+            'driver': data.get('driver', ''),
+            'date': data.get('date', ''),
+            'chassis': data.get('chassis', ''),
+            'event': data.get('event', ''),
+            'accident_damage': data.get('accident_damage', '')
+        }
+        trigger_n8n_workflow(webhook_data)
+
         return jsonify({
             'success': True,
-            'message': 'Report created successfully',
+            'message': 'Report created successfully. AI processing started.',
             'report': report_to_dict(report, created_parts)
         }), 201
 
@@ -601,4 +653,7 @@ def delete_part(part_id):
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    # Use debug=False in production, controlled by environment variable
+    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)

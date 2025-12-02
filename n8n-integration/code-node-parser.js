@@ -1,11 +1,13 @@
 // n8n Code Node - Parse AI Agent Output and Extract Crash Report JSON
 // This node extracts the JSON from the AI response and formats it for the dashboard API
+// Also extracts incident_id for the two-step flow (UI creates report, n8n enriches with parts)
 
 // Get the AI agent's output
 const aiOutput = $input.all();
 
 // Initialize result
 let reportData = null;
+let incidentId = null;
 let errorMessage = null;
 
 try {
@@ -34,6 +36,14 @@ try {
 
   console.log('Full AI Message:', fullMessage);
 
+  // Extract incident_id from the message
+  // Look for pattern VRD-YYYYMMDD-XXXXXX (6 hex chars)
+  const incidentIdMatch = fullMessage.match(/VRD-\d{8}-[A-F0-9]{6}/i);
+  if (incidentIdMatch) {
+    incidentId = incidentIdMatch[0].toUpperCase();
+    console.log('Found incident_id:', incidentId);
+  }
+
   // Extract JSON between markers
   const startMarker = '###JSON_START###';
   const endMarker = '###JSON_END###';
@@ -52,6 +62,12 @@ try {
 
   // Parse the JSON
   reportData = JSON.parse(jsonString);
+
+  // Check if incident_id is in the JSON data (AI might include it)
+  if (reportData.incident_id) {
+    incidentId = reportData.incident_id;
+    console.log('Using incident_id from JSON:', incidentId);
+  }
 
   // Validate required fields
   if (!reportData.driver) {
@@ -100,7 +116,11 @@ if (reportData) {
     json: {
       success: true,
       reportData: reportData,
-      message: 'Crash report parsed successfully'
+      incidentId: incidentId,
+      hasIncidentId: !!incidentId,
+      message: incidentId
+        ? `Crash report parsed successfully. Will update report ${incidentId}`
+        : 'Crash report parsed successfully. No incident_id found - will create new report.'
     }
   }];
 } else {
@@ -108,6 +128,8 @@ if (reportData) {
     json: {
       success: false,
       error: errorMessage,
+      incidentId: null,
+      hasIncidentId: false,
       message: 'Failed to parse crash report. Please ensure the AI has generated a complete report with JSON markers.'
     }
   }];

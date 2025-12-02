@@ -11,11 +11,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application files
 COPY . .
 
-# Create directory for SQLite database
-RUN mkdir -p /app/instance
-
-# Expose port 8080
+# Expose port (Cloudflare uses 8080 by default)
 EXPOSE 8080
 
-# Run the application
-CMD ["python", "app.py"]
+# Set environment variables
+ENV PORT=8080
+ENV FLASK_DEBUG=False
+
+# Run with gunicorn for production
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--threads", "4", "--timeout", "120", "app:app"]

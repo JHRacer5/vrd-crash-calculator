@@ -1,20 +1,17 @@
-version: '3.8'
-
 services:
   crash-calculator:
     build: .
     container_name: vrd-crash-calculator
     ports:
       - "8080:8080"
-    volumes:
-      - ./:/app
-      - ./instance:/app/instance
     environment:
-      - FLASK_ENV=production
+      - FLASK_DEBUG=False
+      - PORT=8080
+      # These use defaults from app.py if not set
+      # Set these in production via .env file or container environment
     restart: unless-stopped
-    networks:
-      - vrd-network
-
-networks:
-  vrd-network:
-    external: true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
