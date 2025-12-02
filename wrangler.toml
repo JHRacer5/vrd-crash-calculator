@@ -1,0 +1,8 @@
+name = "vrd-crash-calculator"
+main = "src/index.js"
+compatibility_date = "2025-12-02"
+
+[containers]
+  [containers.CONTAINER]
+    image = "./Dockerfile"
+    max_instances = 1
